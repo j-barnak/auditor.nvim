@@ -1161,6 +1161,9 @@ end
 
 -- Close any open note floating window (viewer or editor).
 function M._close_note_float()
+  if M._note_float_buf and vim.api.nvim_buf_is_valid(M._note_float_buf) then
+    vim.bo[M._note_float_buf].modified = false
+  end
   if M._note_float_win and vim.api.nvim_win_is_valid(M._note_float_win) then
     vim.api.nvim_win_close(M._note_float_win, true)
   end
@@ -1275,6 +1278,9 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
   end
   vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, lines)
   vim.bo[float_buf].bufhidden = "wipe"
+  vim.bo[float_buf].buftype = "acwrite"
+  vim.bo[float_buf].modifiable = true
+  vim.api.nvim_buf_set_name(float_buf, "auditor://note")
 
   local max_line_len = 0
   for _, l in ipairs(lines) do
@@ -1292,7 +1298,6 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
     col = 0,
     width = width,
     height = height,
-    style = "minimal",
     border = "rounded",
     title = " Note: " .. word_text .. " ",
     title_pos = "center",
@@ -1314,6 +1319,7 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
     local text = table.concat(note_lines, "\n")
     text = text:gsub("%s+$", "")
 
+    vim.bo[float_buf].modified = false
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
     end
@@ -1337,6 +1343,9 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
   end
 
   local function cancel()
+    if vim.api.nvim_buf_is_valid(float_buf) then
+      vim.bo[float_buf].modified = false
+    end
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
     end
@@ -1345,11 +1354,20 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
   end
 
   for _, key in ipairs(M._note_save_keys) do
-    vim.keymap.set({ "n", "i" }, key, save_note, { buffer = float_buf, desc = "Save note" })
+    vim.keymap.set({ "n", "i" }, key, save_note, { buffer = float_buf, noremap = true, desc = "Save note" })
   end
   for _, key in ipairs(M._note_cancel_keys) do
-    vim.keymap.set("n", key, cancel, { buffer = float_buf, desc = "Cancel note editor" })
+    vim.keymap.set("n", key, cancel, { buffer = float_buf, noremap = true, desc = "Cancel note editor" })
   end
+
+  -- Make :w and :wq trigger save (buffer is scratch so BufWriteCmd intercepts).
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = float_buf,
+    once = true,
+    callback = function()
+      save_note()
+    end,
+  })
 
   if not initial_text or initial_text == "" then
     vim.cmd("startinsert")

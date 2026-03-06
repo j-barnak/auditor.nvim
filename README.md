@@ -213,7 +213,9 @@ Notes are virtual text annotations attached to highlighted words. Each note is i
 
 **Editing**: `:AuditNote` and `:AuditNoteEdit` open a floating editor buffer. Multi-line notes are supported. `<C-s>` or `<S-CR>` saves, `q`/`<Esc>` cancels (in normal mode). These bindings are configurable via `note_save_keys` and `note_cancel_keys` in `setup()`.
 
-> **Note**: `<S-CR>` (Shift+Enter) requires a terminal that sends a distinct keycode. In WezTerm, add to your `wezterm.lua`:
+> **`<C-s>` not working?** Most shells enable XON/XOFF flow control, which intercepts `Ctrl+S` before it reaches Neovim. Add `stty -ixon` to your `~/.bashrc` or `~/.zshrc` and restart your shell.
+>
+> **`<S-CR>` not working?** Most terminals send the same keycode for Enter and Shift+Enter. In WezTerm, add to your `wezterm.lua`:
 > ```lua
 > { key = "Enter", mods = "SHIFT", action = act.SendString("\x1b[13;2u") }
 > ```

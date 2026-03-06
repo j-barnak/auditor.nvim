@@ -68,6 +68,7 @@ test/
   spec/notes_display_fuzz_spec.lua – Note display fuzz: format_note_preview fuzz, float lifecycle, nasty strings, property-based
   spec/notes_save_and_scale_spec.lua – Note save keymaps, configurable keys, many-notes scaling, DB round-trip, fuzz
   spec/stale_recovery_spec.lua    – Stale highlight recovery: line/col shifts, word boundaries, property-based, notes
+  spec/notes_e2e_spec.lua         – Notes E2E: exhaustive state machine (S0–S9), float editor/viewer lifecycle, CRUD cycles, multi-buffer, toggle, undo/clear/re-mark, multi-line, DB round-trips, pick_note_action, buffer content invariants
 ```
 
 ## Audit mode

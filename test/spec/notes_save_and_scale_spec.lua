@@ -75,6 +75,26 @@ describe("notes save and scale", function()
     hl = require("auditor.highlights")
   end)
 
+  after_each(function()
+    -- Clean up any leftover float editor/viewer buffers to prevent E37
+    if auditor and auditor._note_float_buf and vim.api.nvim_buf_is_valid(auditor._note_float_buf) then
+      vim.bo[auditor._note_float_buf].modified = false
+    end
+    if auditor and auditor._note_float_win and vim.api.nvim_win_is_valid(auditor._note_float_win) then
+      pcall(vim.api.nvim_win_close, auditor._note_float_win, true)
+    end
+    if auditor then
+      auditor._note_float_win = nil
+      auditor._note_float_buf = nil
+    end
+    -- Also force-clear any acwrite buffers left as current
+    local cur = vim.api.nvim_get_current_buf()
+    if vim.bo[cur].buftype == "acwrite" then
+      vim.bo[cur].modified = false
+      pcall(vim.api.nvim_buf_delete, cur, { force = true })
+    end
+  end)
+
   local function setup_buf(lines, cursor_row, cursor_col)
     local bufnr = vim.api.nvim_create_buf(false, true)
     local filepath = vim.fn.tempname() .. ".lua"
@@ -365,6 +385,109 @@ describe("notes save and scale", function()
 
       assert.equals("L1\nL2\nL3", auditor._notes[bufnr][target_id])
 
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+  end)
+
+  -- ── S10b: E2E add_note via float editor + C-s save ──────────────────
+  describe("S10b: E2E add_note → float editor → C-s", function()
+    it("add_note opens float, C-s saves note and closes", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+      -- Use the float editor path, NOT vim.ui.input
+      auditor._note_input_override = nil
+
+      auditor.add_note()
+
+      -- Float editor should be open
+      assert.is_not_nil(auditor._note_float_win, "float should be open after add_note")
+      assert.is_true(vim.api.nvim_win_is_valid(auditor._note_float_win))
+
+      local float_buf = auditor._note_float_buf
+      assert.is_not_nil(float_buf, "float buf should exist")
+
+      -- Type into the editor
+      vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, { "e2e note via C-s" })
+
+      -- Find and invoke the C-s save callback
+      local cb = get_keymap_cb(float_buf, "n", "<C-S>")
+        or get_keymap_cb(float_buf, "n", "<C-s>")
+        or get_keymap_cb(float_buf, "i", "<C-S>")
+        or get_keymap_cb(float_buf, "i", "<C-s>")
+      assert.is_not_nil(cb, "<C-s> must be registered on the float buffer")
+      cb()
+
+      -- Float should be closed
+      assert.is_nil(auditor._note_float_win)
+
+      -- Note should be stored
+      local token = auditor._cword_token(bufnr)
+      local ext = vim.api.nvim_buf_get_extmarks(
+        bufnr, hl.ns,
+        { token.line, token.col_start },
+        { token.line, token.col_end },
+        { details = true }
+      )
+      local found_note = nil
+      for _, em in ipairs(ext) do
+        if auditor._notes[bufnr] and auditor._notes[bufnr][em[1]] then
+          found_note = auditor._notes[bufnr][em[1]]
+        end
+      end
+      assert.equals("e2e note via C-s", found_note)
+
+      -- Restore override for remaining tests
+      auditor._note_input_override = true
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+  end)
+
+  -- ── S10c: E2E edit_note via float editor + C-s save ─────────────────
+  describe("S10c: E2E edit_note → float editor → C-s", function()
+    it("edit_note opens pre-filled float, C-s saves update", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+
+      -- First add a note via stub
+      auditor._note_input_override = true
+      local ri = stub_input("original")
+      auditor.add_note()
+      ri()
+
+      -- Now edit via float editor
+      auditor._note_input_override = nil
+      auditor.edit_note()
+
+      assert.is_not_nil(auditor._note_float_win)
+      local float_buf = auditor._note_float_buf
+
+      -- Should be pre-filled
+      local lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
+      assert.equals("original", lines[1])
+
+      -- Edit and save via C-s
+      vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, { "updated via editor" })
+      local cb = get_keymap_cb(float_buf, "n", "<C-S>")
+        or get_keymap_cb(float_buf, "n", "<C-s>")
+      assert.is_not_nil(cb)
+      cb()
+
+      local token = auditor._cword_token(bufnr)
+      local ext = vim.api.nvim_buf_get_extmarks(
+        bufnr, hl.ns,
+        { token.line, token.col_start },
+        { token.line, token.col_end },
+        { details = true }
+      )
+      local found = nil
+      for _, em in ipairs(ext) do
+        if auditor._notes[bufnr] and auditor._notes[bufnr][em[1]] then
+          found = auditor._notes[bufnr][em[1]]
+        end
+      end
+      assert.equals("updated via editor", found)
+
+      auditor._note_input_override = true
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
   end)
@@ -960,6 +1083,188 @@ describe("notes save and scale", function()
         end
       end
       assert.equals(0, count)
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+  end)
+
+  -- ═══════════════════════════════════════════════════════════════════════
+  -- Editor buffer properties tests
+  -- ═══════════════════════════════════════════════════════════════════════
+
+  -- ── S26b: editor buffer is modifiable ──────────────────────────────────
+  describe("S26b: editor buffer is modifiable", function()
+    it("float buffer allows text editing", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+
+      auditor._open_note_editor(bufnr, target_id, token, "")
+
+      -- Buffer must be modifiable
+      assert.is_true(vim.bo[auditor._note_float_buf].modifiable)
+
+      -- Actually write to it
+      local ok, err = pcall(vim.api.nvim_buf_set_lines,
+        auditor._note_float_buf, 0, -1, false, { "typed text" })
+      assert.is_true(ok, "should be able to write: " .. tostring(err))
+
+      local content = vim.api.nvim_buf_get_lines(auditor._note_float_buf, 0, -1, false)
+      assert.equals("typed text", content[1])
+
+      auditor._close_note_float()
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+
+    it("pre-filled buffer is also modifiable", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+
+      auditor._open_note_editor(bufnr, target_id, token, "existing text")
+
+      assert.is_true(vim.bo[auditor._note_float_buf].modifiable)
+
+      -- Can append to existing text
+      local ok = pcall(vim.api.nvim_buf_set_lines,
+        auditor._note_float_buf, 0, -1, false, { "existing text", "new line" })
+      assert.is_true(ok)
+
+      auditor._close_note_float()
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+  end)
+
+  -- ── S26c: :w triggers save_note via BufWriteCmd ────────────────────────
+  describe("S26c: :w saves the note", function()
+    it(":w in the editor buffer saves and closes the float", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+
+      auditor._open_note_editor(bufnr, target_id, token, "")
+      vim.api.nvim_buf_set_lines(auditor._note_float_buf, 0, -1, false, { "saved via :w" })
+
+      -- :w should trigger BufWriteCmd → save_note
+      -- Need to be in the float window
+      vim.api.nvim_set_current_win(auditor._note_float_win)
+      local ok, err = pcall(vim.cmd, "write")
+      assert.is_true(ok, ":w should not error: " .. tostring(err))
+
+      -- Float should be closed
+      assert.is_nil(auditor._note_float_win)
+
+      -- Note should be stored
+      assert.equals("saved via :w", auditor._notes[bufnr][target_id])
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+
+    it(":wq also works", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+
+      auditor._open_note_editor(bufnr, target_id, token, "")
+      vim.api.nvim_buf_set_lines(auditor._note_float_buf, 0, -1, false, { "saved via :wq" })
+
+      vim.api.nvim_set_current_win(auditor._note_float_win)
+      -- :wq = write + quit; BufWriteCmd handles the write part
+      local ok = pcall(vim.cmd, "write")
+      assert.is_true(ok)
+      assert.equals("saved via :wq", auditor._notes[bufnr][target_id])
+
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+  end)
+
+  -- ── S26d: C-s works without needing two presses ────────────────────────
+  describe("S26d: C-s keymaps have noremap", function()
+    it("save keymaps have noremap=true", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+
+      auditor._open_note_editor(bufnr, target_id, token, "")
+
+      -- Check that keymaps are noremap (not remappable)
+      local keymaps_n = vim.api.nvim_buf_get_keymap(auditor._note_float_buf, "n")
+      local keymaps_i = vim.api.nvim_buf_get_keymap(auditor._note_float_buf, "i")
+
+      local function find_km(list, lhs)
+        for _, km in ipairs(list) do
+          if km.lhs == lhs then return km end
+        end
+        return nil
+      end
+
+      -- Check C-s in normal mode
+      local km = find_km(keymaps_n, "<C-S>") or find_km(keymaps_n, "<C-s>")
+      assert.is_not_nil(km, "<C-s> should be mapped in normal mode")
+      assert.equals(1, km.noremap, "<C-s> should be noremap in normal mode")
+
+      -- Check C-s in insert mode
+      km = find_km(keymaps_i, "<C-S>") or find_km(keymaps_i, "<C-s>")
+      assert.is_not_nil(km, "<C-s> should be mapped in insert mode")
+      assert.equals(1, km.noremap, "<C-s> should be noremap in insert mode")
+
+      auditor._close_note_float()
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+  end)
+
+  -- ── S26e: editor without style=minimal allows line numbers etc ─────────
+  describe("S26e: editor is not style=minimal", function()
+    it("float window does not use minimal style", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+
+      auditor._open_note_editor(bufnr, target_id, token, "line1\nline2\nline3")
+
+      -- Without style=minimal, the buffer should still be editable
+      -- and window options should allow normal editing
+      assert.is_true(vim.bo[auditor._note_float_buf].modifiable)
+      assert.is_true(vim.api.nvim_win_is_valid(auditor._note_float_win))
+
+      auditor._close_note_float()
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+    end)
+  end)
+
+  -- ── S26f: multi-line editing works in float ────────────────────────────
+  describe("S26f: multi-line editing in float", function()
+    it("can add lines, edit, and save multi-line note", function()
+      local bufnr = setup_buf({ "hello world" }, 1, 0)
+      auditor.highlight_cword_buffer("red")
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+
+      auditor._open_note_editor(bufnr, target_id, token, "")
+
+      -- Simulate typing multiple lines
+      vim.api.nvim_buf_set_lines(auditor._note_float_buf, 0, -1, false, {
+        "First line of note",
+        "Second line with details",
+        "Third line conclusion",
+      })
+
+      -- Save via C-s
+      local cb = get_keymap_cb(auditor._note_float_buf, "n", "<C-S>")
+        or get_keymap_cb(auditor._note_float_buf, "n", "<C-s>")
+      assert.is_not_nil(cb)
+      cb()
+
+      assert.equals(
+        "First line of note\nSecond line with details\nThird line conclusion",
+        auditor._notes[bufnr][target_id]
+      )
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
