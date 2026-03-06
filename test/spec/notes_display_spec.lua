@@ -187,16 +187,16 @@ describe("notes display", function()
     end)
   end)
 
-  -- ── D10: apply_note sign matches color ───────────────────────────────
-  describe("D10: apply_note sign matches color", function()
-    it("sign uses per-color highlight", function()
+  -- ── D10: apply_note sign uses single color ───────────────────────────
+  describe("D10: apply_note sign uses single color", function()
+    it("sign uses AuditorNoteSign regardless of audit color", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello world" })
 
       hl.apply_note(bufnr, 0, 0, 5, "note", "red", "hello")
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      assert.equals("AuditorNoteSignRed", marks[1][4].sign_hl_group)
+      assert.equals("AuditorNoteSign", marks[1][4].sign_hl_group)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -222,14 +222,14 @@ describe("notes display", function()
 
   -- ── D12: apply_note gradient color sign ──────────────────────────────
   describe("D12: gradient color sign", function()
-    it("half color gets AuditorNoteSignHalf", function()
+    it("half color gets AuditorNoteSign (same as all colors)", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello" })
 
       hl.apply_note(bufnr, 0, 0, 5, "note", "half", "hello")
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      assert.equals("AuditorNoteSignHalf", marks[1][4].sign_hl_group)
+      assert.equals("AuditorNoteSign", marks[1][4].sign_hl_group)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -271,14 +271,16 @@ describe("notes display", function()
     end)
   end)
 
-  -- ── D14: note_sign_hl returns per-color group ────────────────────────
-  describe("D14: note_sign_hl per-color", function()
-    it("returns AuditorNoteSignRed for red", function()
-      assert.equals("AuditorNoteSignRed", hl.note_sign_hl("red"))
+  -- ── D14: note_sign_hl returns single group ────────────────────────
+  describe("D14: note_sign_hl single color", function()
+    it("returns AuditorNoteSign for any color", function()
+      assert.equals("AuditorNoteSign", hl.note_sign_hl())
     end)
 
-    it("returns AuditorNoteSignBlue for blue", function()
-      assert.equals("AuditorNoteSignBlue", hl.note_sign_hl("blue"))
+    it("returns AuditorNoteSign regardless of argument", function()
+      assert.equals("AuditorNoteSign", hl.note_sign_hl("red"))
+      assert.equals("AuditorNoteSign", hl.note_sign_hl("blue"))
+      assert.equals("AuditorNoteSign", hl.note_sign_hl("half"))
     end)
   end)
 
@@ -587,9 +589,9 @@ describe("notes display", function()
     end)
   end)
 
-  -- ── D28: custom colors with note sign highlights ───────────────────────
-  describe("D28: custom colors note sign highlights", function()
-    it("custom solid color gets per-color sign hl", function()
+  -- ── D28: note sign uses single color for all audit colors ──────────────
+  describe("D28: note sign single color", function()
+    it("custom solid color still uses AuditorNoteSign", function()
       reset_modules()
       local tmp_db = vim.fn.tempname() .. ".db"
       local a2 = require("auditor")
@@ -602,11 +604,11 @@ describe("notes display", function()
       })
       local hl2 = require("auditor.highlights")
 
-      assert.equals(1, vim.fn.hlexists("AuditorNoteSignGreen"))
-      assert.equals("AuditorNoteSignGreen", hl2.note_sign_hl("green"))
+      assert.equals(1, vim.fn.hlexists("AuditorNoteSign"))
+      assert.equals("AuditorNoteSign", hl2.note_sign_hl())
     end)
 
-    it("custom gradient color gets per-color sign hl", function()
+    it("custom gradient color still uses AuditorNoteSign", function()
       reset_modules()
       local tmp_db = vim.fn.tempname() .. ".db"
       local a2 = require("auditor")
@@ -619,14 +621,14 @@ describe("notes display", function()
       })
       local hl2 = require("auditor.highlights")
 
-      assert.equals(1, vim.fn.hlexists("AuditorNoteSignWarm"))
-      assert.equals("AuditorNoteSignWarm", hl2.note_sign_hl("warm"))
+      assert.equals(1, vim.fn.hlexists("AuditorNoteSign"))
+      assert.equals("AuditorNoteSign", hl2.note_sign_hl())
     end)
   end)
 
-  -- ── D29: sign color matches word audit color in full flow ──────────────
-  describe("D29: sign color matches audit color in add_note flow", function()
-    it("red word → red sign after add_note", function()
+  -- ── D29: sign uses single color in full add_note flow ──────────────
+  describe("D29: sign uses AuditorNoteSign in add_note flow", function()
+    it("red word → AuditorNoteSign after add_note", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local ri = stub_input("my note")
@@ -635,12 +637,12 @@ describe("notes display", function()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
-      assert.equals("AuditorNoteSignRed", marks[1][4].sign_hl_group)
+      assert.equals("AuditorNoteSign", marks[1][4].sign_hl_group)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
 
-    it("blue word → blue sign after add_note", function()
+    it("blue word → AuditorNoteSign after add_note", function()
       local bufnr = setup_buf({ "hello world" }, 1, 6)
       auditor.highlight_cword_buffer("blue")
       local ri = stub_input("blue note")
@@ -649,12 +651,12 @@ describe("notes display", function()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
-      assert.equals("AuditorNoteSignBlue", marks[1][4].sign_hl_group)
+      assert.equals("AuditorNoteSign", marks[1][4].sign_hl_group)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
 
-    it("gradient word → gradient sign after add_note", function()
+    it("gradient word → AuditorNoteSign after add_note", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("half")
       local ri = stub_input("half note")
@@ -663,7 +665,7 @@ describe("notes display", function()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
-      assert.equals("AuditorNoteSignHalf", marks[1][4].sign_hl_group)
+      assert.equals("AuditorNoteSign", marks[1][4].sign_hl_group)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -835,12 +837,13 @@ describe("notes display", function()
     end)
   end)
 
-  -- ── D35: note_sign_hl with all default colors ─────────────────────────
-  describe("D35: note_sign_hl all default colors", function()
-    it("returns correct group for each default color", function()
-      assert.equals("AuditorNoteSignRed", hl.note_sign_hl("red"))
-      assert.equals("AuditorNoteSignBlue", hl.note_sign_hl("blue"))
-      assert.equals("AuditorNoteSignHalf", hl.note_sign_hl("half"))
+  -- ── D35: note_sign_hl always returns AuditorNoteSign ─────────────────
+  describe("D35: note_sign_hl single color", function()
+    it("returns AuditorNoteSign for all colors", function()
+      assert.equals("AuditorNoteSign", hl.note_sign_hl())
+      assert.equals("AuditorNoteSign", hl.note_sign_hl("red"))
+      assert.equals("AuditorNoteSign", hl.note_sign_hl("blue"))
+      assert.equals("AuditorNoteSign", hl.note_sign_hl("half"))
     end)
   end)
 
@@ -887,7 +890,7 @@ describe("notes display", function()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
-      assert.equals("AuditorNoteSignRed", marks[1][4].sign_hl_group)
+      assert.equals("AuditorNoteSign", marks[1][4].sign_hl_group)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -972,7 +975,7 @@ describe("notes display", function()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
-      assert.equals("AuditorNoteSignBlue", marks[1][4].sign_hl_group)
+      assert.equals("AuditorNoteSign", marks[1][4].sign_hl_group)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)

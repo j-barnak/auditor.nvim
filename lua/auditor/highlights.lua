@@ -21,6 +21,7 @@ M.note_ns = vim.api.nvim_create_namespace("auditor_notes")
 
 -- Note display configuration (set from init.lua during setup).
 M._note_sign_icon = "\xe2\x97\x86" -- ◆
+M._note_sign_color = "#6B7280"
 M._note_preview_len = 30
 
 -- Number of discrete gradient steps.
@@ -74,7 +75,7 @@ function M.setup(color_defs)
   vim.api.nvim_set_hl(0, "AuditorNote", { underline = true, sp = "#888888" })
 
   -- Note sign and float highlight groups.
-  vim.api.nvim_set_hl(0, "AuditorNoteSign", { fg = "#888888" })
+  vim.api.nvim_set_hl(0, "AuditorNoteSign", { fg = M._note_sign_color })
   vim.api.nvim_set_hl(0, "AuditorNoteFloat", { link = "NormalFloat", default = true })
   vim.api.nvim_set_hl(0, "AuditorNoteFloatBorder", { link = "FloatBorder", default = true })
   vim.api.nvim_set_hl(0, "AuditorNoteFloatTitle", { fg = "#FFFFFF", bold = true })
@@ -134,15 +135,6 @@ function M.setup(color_defs)
       hl_group_to_color[group] = def.name
     end
 
-    -- Per-color note sign highlight.
-    local sign_group = "AuditorNoteSign" .. def.name:sub(1, 1):upper() .. def.name:sub(2)
-    if def.gradient then
-      vim.api.nvim_set_hl(0, sign_group, { fg = def.gradient[1] })
-    elseif def.hl and def.hl.bg then
-      vim.api.nvim_set_hl(0, sign_group, { fg = def.hl.bg })
-    else
-      vim.api.nvim_set_hl(0, sign_group, { fg = "#888888" })
-    end
   end
 end
 
@@ -439,16 +431,9 @@ function M.format_note_preview(text, word_text, max_len)
   return "  " .. body
 end
 
--- Return the sign highlight group for a given audit color.
----@param color? string audit color name
+-- Return the sign highlight group for notes (single color for all).
 ---@return string hl_group
-function M.note_sign_hl(color)
-  if color and color ~= "" then
-    local group = "AuditorNoteSign" .. color:sub(1, 1):upper() .. color:sub(2)
-    if vim.fn.hlexists(group) == 1 then
-      return group
-    end
-  end
+function M.note_sign_hl()
   return "AuditorNoteSign"
 end
 
@@ -459,10 +444,10 @@ end
 ---@param col_start integer 0-indexed byte column start of the word
 ---@param col_end integer 0-indexed byte column end of the word (exclusive)
 ---@param _text string note text (unused for display, kept for API)
----@param color? string audit color for sign tinting
+---@param _color? string audit color (unused, kept for API compat)
 ---@param _word_text? string word the note is attached to (unused)
 ---@return integer note_extmark_id
-function M.apply_note(bufnr, line, col_start, col_end, _text, color, _word_text)
+function M.apply_note(bufnr, line, col_start, col_end, _text, _color, _word_text)
   local opts = {
     end_row = line,
     end_col = col_end,
@@ -471,7 +456,7 @@ function M.apply_note(bufnr, line, col_start, col_end, _text, color, _word_text)
   }
   if M._note_sign_icon and M._note_sign_icon ~= "" then
     opts.sign_text = M._note_sign_icon
-    opts.sign_hl_group = M.note_sign_hl(color)
+    opts.sign_hl_group = "AuditorNoteSign"
   end
   return vim.api.nvim_buf_set_extmark(bufnr, M.note_ns, line, col_start, opts)
 end

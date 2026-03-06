@@ -31,6 +31,7 @@
 ---@field colors? AuditorColorDef[]             Color definitions (solid or gradient); see highlights.DEFAULT_COLORS
 ---@field note_preview_len? integer             Max chars for EOL note preview (default: 30)
 ---@field note_sign_icon? string                Sign column icon for notes (default: "◆", "" to disable)
+---@field note_sign_color? string               Hex color for the note sign icon (default: "#6B7280")
 ---@field note_save_keys? string[]              Keys that save the note editor (default: {"<C-s>", "<S-CR>"})
 ---@field note_cancel_keys? string[]            Keys that cancel the note editor (default: {"q", "<Esc>"})
 
@@ -1410,14 +1411,17 @@ function M.setup(opts)
 
   local color_defs = opts.colors or highlights.DEFAULT_COLORS
 
-  db.setup(opts.db_path)
-  highlights.setup(color_defs)
-
-  -- Apply note display settings to highlights module.
+  -- Apply note display settings before highlights.setup() so hl groups use them.
   highlights._note_preview_len = opts.note_preview_len or 30
   if opts.note_sign_icon ~= nil then
     highlights._note_sign_icon = opts.note_sign_icon
   end
+  if opts.note_sign_color then
+    highlights._note_sign_color = opts.note_sign_color
+  end
+
+  db.setup(opts.db_path)
+  highlights.setup(color_defs)
 
   -- Apply note editor key bindings.
   if opts.note_save_keys then
