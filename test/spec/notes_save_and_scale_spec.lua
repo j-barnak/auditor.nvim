@@ -1158,7 +1158,7 @@ describe("notes save and scale", function()
 
   -- ── S26c: :w triggers save_note via BufWriteCmd ────────────────────────
   describe("S26c: :w saves the note", function()
-    it(":w in the editor buffer saves and closes the float", function()
+    it(":w in the editor buffer saves but keeps float open", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local token = auditor._cword_token(bufnr)
@@ -1167,22 +1167,23 @@ describe("notes save and scale", function()
       auditor._open_note_editor(bufnr, target_id, token, "")
       vim.api.nvim_buf_set_lines(auditor._note_float_buf, 0, -1, false, { "saved via :w" })
 
-      -- :w should trigger BufWriteCmd → save_note
-      -- Need to be in the float window
+      -- :w should trigger BufWriteCmd → persist_note (no close)
       vim.api.nvim_set_current_win(auditor._note_float_win)
       local ok, err = pcall(vim.cmd, "write")
       assert.is_true(ok, ":w should not error: " .. tostring(err))
 
-      -- Float should be closed
-      assert.is_nil(auditor._note_float_win)
+      -- Float stays open so the user can keep editing
+      assert.is_not_nil(auditor._note_float_win)
+      assert.is_true(vim.api.nvim_win_is_valid(auditor._note_float_win))
 
       -- Note should be stored
       assert.equals("saved via :w", auditor._notes[bufnr][target_id])
 
+      auditor._close_note_float()
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
 
-    it(":wq also works", function()
+    it(":wq saves and closes just the float", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local token = auditor._cword_token(bufnr)
@@ -1192,10 +1193,12 @@ describe("notes save and scale", function()
       vim.api.nvim_buf_set_lines(auditor._note_float_buf, 0, -1, false, { "saved via :wq" })
 
       vim.api.nvim_set_current_win(auditor._note_float_win)
-      -- :wq = write + quit; BufWriteCmd handles the write part
-      local ok = pcall(vim.cmd, "write")
+      -- :wq = BufWriteCmd persists note + :q closes the float (not Neovim)
+      local ok = pcall(vim.cmd, "wq")
       assert.is_true(ok)
       assert.equals("saved via :wq", auditor._notes[bufnr][target_id])
+      -- Float should be gone
+      assert.is_true(auditor._note_float_win == nil or not vim.api.nvim_win_is_valid(auditor._note_float_win))
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)

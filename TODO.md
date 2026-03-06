@@ -1,0 +1,1 @@
+- I should be able to :wq and treat the note buffer like a normal buffer

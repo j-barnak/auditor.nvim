@@ -385,7 +385,7 @@ describe("notes E2E", function()
   -- ═══════════════════════════════════════════════════════════════════════════
 
   describe("E2E-8: :w saves note from float editor", function()
-    it(":w triggers BufWriteCmd and saves", function()
+    it(":w triggers BufWriteCmd, persists note, keeps float open", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local token = auditor._cword_token(bufnr)
@@ -397,7 +397,11 @@ describe("notes E2E", function()
       local ok = pcall(vim.cmd, "write")
       assert.is_true(ok)
       assert.equals("saved via write", auditor._notes[bufnr][target_id])
-      assert.is_nil(auditor._note_float_win)
+      -- :w keeps the float open so the user can keep editing
+      assert.is_not_nil(auditor._note_float_win)
+      assert.is_true(vim.api.nvim_win_is_valid(auditor._note_float_win))
+      -- close manually
+      auditor._close_note_float()
       cleanup(bufnr)
     end)
   end)

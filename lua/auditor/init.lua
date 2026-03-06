@@ -1318,28 +1318,16 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
   M._note_float_win = win
   M._note_float_buf = float_buf
 
-  local saving = false
-  local function save_note()
-    if saving then
-      return
-    end
+  -- Persist note text without closing the window.
+  local function persist_note()
     if not vim.api.nvim_buf_is_valid(float_buf) then
       return
     end
-    saving = true
     local note_lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
     local text = table.concat(note_lines, "\n")
     text = text:gsub("%s+$", "")
 
     vim.bo[float_buf].modified = false
-    -- Escape insert mode via feedkeys so mode change completes before close
-    local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
-    vim.api.nvim_feedkeys(esc, "nx", false)
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_close(win, true)
-    end
-    M._note_float_win = nil
-    M._note_float_buf = nil
 
     if not vim.api.nvim_buf_is_valid(bufnr) then
       return
@@ -1357,7 +1345,7 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
     end
   end
 
-  local function cancel()
+  local function close_float()
     if vim.api.nvim_buf_is_valid(float_buf) then
       vim.bo[float_buf].modified = false
     end
@@ -1368,19 +1356,42 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
     M._note_float_buf = nil
   end
 
-  for _, key in ipairs(M._note_save_keys) do
-    vim.keymap.set({ "n", "i" }, key, save_note, { buffer = float_buf, noremap = true, desc = "Save note" })
-  end
-  for _, key in ipairs(M._note_cancel_keys) do
-    vim.keymap.set("n", key, cancel, { buffer = float_buf, noremap = true, desc = "Cancel note editor" })
+  -- Save + close (for <C-s> and friends).
+  local function save_and_close()
+    persist_note()
+    close_float()
   end
 
-  -- Make :w and :wq trigger save (buffer is scratch so BufWriteCmd intercepts).
+  for _, key in ipairs(M._note_save_keys) do
+    vim.keymap.set("n", key, save_and_close, { buffer = float_buf, noremap = true, desc = "Save note" })
+    -- Insert mode: exit insert first via <Cmd> to avoid mode-transition issues
+    vim.keymap.set("i", key, function()
+      vim.cmd("stopinsert")
+      save_and_close()
+    end, { buffer = float_buf, noremap = true, desc = "Save note" })
+  end
+  for _, key in ipairs(M._note_cancel_keys) do
+    vim.keymap.set("n", key, close_float, { buffer = float_buf, noremap = true, desc = "Cancel note editor" })
+  end
+
+  -- :w persists the note but keeps the window open.
+  -- :wq persists (BufWriteCmd), then :q closes just the float.
   vim.api.nvim_create_autocmd("BufWriteCmd", {
     buffer = float_buf,
+    callback = function()
+      persist_note()
+    end,
+  })
+
+  -- Clean up state when the float window is closed by any means (:q, :wq, etc.)
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(win),
     once = true,
     callback = function()
-      save_note()
+      if M._note_float_win == win then
+        M._note_float_win = nil
+        M._note_float_buf = nil
+      end
     end,
   })
 
