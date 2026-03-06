@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── tests ────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests (nvim ${{ matrix.neovim }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        neovim: [v0.10.0, v0.11.0, stable, nightly]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.neovim }}
+
+      - name: Install system deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev luarocks
+
+      - name: Install system deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install sqlite luarocks
+
+      - name: Install vusted
+        run: luarocks install vusted --local
+
+      - name: Clone test dependencies
+        run: make deps
+
+      - name: Run test suite
+        run: |
+          export PATH="$HOME/.luarocks/bin:$PATH"
+          make test
+
+  # ── lint ─────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (luacheck)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install luarocks
+        run: sudo apt-get update && sudo apt-get install -y luarocks
+
+      - name: Install luacheck
+        run: luarocks install luacheck --local
+
+      - name: Run luacheck
+        run: |
+          export PATH="$HOME/.luarocks/bin:$PATH"
+          make lint
+
+  # ── format check ─────────────────────────────────────────────────────────────
+  fmt:
+    name: Format (stylua)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install StyLua
+        uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check lua/ test/
+
+  # ── type check ───────────────────────────────────────────────────────────────
+  typecheck:
+    name: Type check (lua-language-server)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lua-language-server
+        run: |
+          LLS_VERSION=$(curl -s https://api.github.com/repos/LuaLS/lua-language-server/releases/latest \
+            | grep '"tag_name"' | cut -d'"' -f4)
+          curl -sL "https://github.com/LuaLS/lua-language-server/releases/download/${LLS_VERSION}/lua-language-server-${LLS_VERSION}-linux-x64.tar.gz" \
+            | tar -xz -C ~/.local
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Run lua-language-server check
+        run: make typecheck

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(vusted:*)",
+      "Bash(luarocks:*)",
+      "Bash(nvim:*)",
+      "Read(//home/jared/.local/share/nvim/lazy/**)",
+      "Bash(source:*)",
+      "WebFetch(domain:neovim.io)",
+      "WebFetch(domain:github.com)",
+      "Bash(make test:*)",
+      "Bash(make lint:*)",
+      "Bash(wc:*)",
+      "Bash(do echo:*)",
+      "Bash(grep:*)",
+      "Bash(/tmp/test_note_db2.lua:*)",
+      "Bash(/tmp/test_note_db3.lua:*)",
+      "Bash(/tmp/test_note_db4.lua:*)",
+      "Bash(/tmp/test_nasty.lua:*)",
+      "Bash(bash:*)"
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+# Cloned test dependency (make deps)
+deps/
+
+# SQLite database files
+*.db
+
+# lua-language-server output
+log/
