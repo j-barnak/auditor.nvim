@@ -58,7 +58,6 @@ The database is automatically scoped per project: the plugin walks up from `cwd`
 | `db_path` | auto | Override the SQLite file path |
 | `keymaps` | `true` | `false` to disable all, `true` for defaults, or a table to customize (see below) |
 | `colors` | built-in | Color definitions (solid or gradient); see below |
-| `note_preview_len` | `30` | Max characters for the truncated note preview at end of line |
 | `note_sign_icon` | `"◆"` | Sign column icon for notes (`""` to disable) |
 | `note_save_keys` | `{"<C-s>", "<S-CR>"}` | Keys that save the floating note editor (both normal + insert mode) |
 | `note_cancel_keys` | `{"q", "<Esc>"}` | Keys that cancel the floating note editor (normal mode only) |
@@ -200,7 +199,7 @@ There are two families of mark commands:
 1. `:EnterAuditMode` (or `:AuditToggle`) — show saved highlights, enable commands
 2. Place cursor on a word and run `:AuditRed` / `:AuditBlue` / `:AuditHalf` — the single word is highlighted immediately
 3. Use `:AuditWordRed` to mark all occurrences of that word within the enclosing function
-4. Use `:AuditNote` to attach a note to a highlighted word (opens floating editor; sign icon + truncated preview shown at end of line)
+4. Use `:AuditNote` to attach a note to a highlighted word (opens floating editor; subtle underline + sign icon indicate a note exists)
 5. Made a mistake? `:AuditUndo` removes the highlight on the word under your cursor (including its note)
 6. `:AuditSave` — persist to SQLite (highlights and notes survive Neovim restarts)
 7. `:ExitAuditMode` (or `:AuditToggle`) — hide all highlights (database is untouched)
@@ -209,7 +208,7 @@ Unsaved highlights (not yet `:AuditSave`d) survive enter/exit mode transitions b
 
 ### Notes
 
-Notes are virtual text annotations attached to highlighted words. Each note is indicated by a **sign column icon** (`◆` by default, colored to match the highlight) and a **truncated preview** at end of line (`  word: first line...`). For the full content, use `:AuditNoteShow` to open a scrollable floating window.
+Notes are virtual text annotations attached to highlighted words. Each note is indicated by a **subtle underline** on the word and a **sign column icon** (`◆` by default, colored to match the highlight). For the full content, use `:AuditNoteShow` to open a scrollable floating window.
 
 **Editing**: `:AuditNote` and `:AuditNoteEdit` open a floating editor buffer. Multi-line notes are supported. `<C-s>` or `<S-CR>` saves, `q`/`<Esc>` cancels (in normal mode). These bindings are configurable via `note_save_keys` and `note_cancel_keys` in `setup()`.
 
@@ -223,7 +222,7 @@ Notes are virtual text annotations attached to highlighted words. Each note is i
 Notes are:
 
 - **Not in the file** — they use Neovim virtual text and signs, so they never appear in diffs or affect the buffer content
-- **Multi-line** — the floating editor supports multi-line notes; the EOL preview shows the first line with `(+N lines)` suffix
+- **Multi-line** — the floating editor supports multi-line notes
 - **Persisted in the database** — saved alongside highlights with `:AuditSave`, restored when entering audit mode
 - **Attached to highlights** — removing a highlight with `:AuditUndo` also removes its note; `:AuditClear` removes all notes
 
@@ -321,3 +320,9 @@ Tests run inside a real headless Neovim process via [vusted](https://github.com/
 - **`health_spec.lua`** — health check: basics, after setup, pending, without setup, active mode
 - **`highlights_unit_spec.lua`** — highlights unit: `hl_for` mapping, `apply_words`/`apply_word` edges, `collect_extmarks`
 - **`ts_unit_spec.lua`** — TS unit: `available()`, `enclosing_function` edges, `get_tokens` opts, regex fuzz
+- **`notes_display_spec.lua`** — note display: underline extmarks, sign indicators, floating viewer
+- **`notes_editor_spec.lua`** — floating note editor: create, pre-fill, save, cancel, multi-line, rapid cycles
+- **`notes_display_fuzz_spec.lua`** — note display fuzz: float lifecycle, nasty strings, property-based
+- **`notes_save_and_scale_spec.lua`** — note save keymaps, configurable keys, many-notes scaling, DB round-trip, fuzz
+- **`notes_e2e_spec.lua`** — notes E2E: exhaustive state machine (S0–S9), float editor/viewer lifecycle, CRUD cycles, multi-buffer, toggle, undo/clear/re-mark
+- **`notes_underline_spec.lua`** — note underline indicator: hl_group, word-range spans, sign colors, same-line multi-note, lifecycle, priority

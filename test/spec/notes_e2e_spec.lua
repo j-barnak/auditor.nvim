@@ -110,25 +110,14 @@ local function hl_extmark_count(bufnr, ns)
   return #vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, {})
 end
 
-local function get_note_texts(bufnr, note_ns)
-  local texts = {}
-  local marks = vim.api.nvim_buf_get_extmarks(bufnr, note_ns, 0, -1, { details = true })
-  for _, m in ipairs(marks) do
-    local vt = m[4].virt_text
-    if vt then
-      for _, chunk in ipairs(vt) do
-        if chunk[1] and chunk[1] ~= "" then
-          table.insert(texts, chunk[1])
-        end
-      end
-    end
+-- Check if any note in _notes contains the given pattern (plain string match).
+-- Note text is stored in auditor._notes, not in the extmark display.
+local function find_note_text_in_state(auditor_mod, bufnr, pattern)
+  if not auditor_mod._notes[bufnr] then
+    return false
   end
-  return texts
-end
-
-local function find_note_text(bufnr, note_ns, pattern)
-  for _, t in ipairs(get_note_texts(bufnr, note_ns)) do
-    if t:find(pattern, 1, true) then
+  for _, text in pairs(auditor_mod._notes[bufnr]) do
+    if text:find(pattern, 1, true) then
       return true
     end
   end
@@ -310,7 +299,7 @@ describe("notes E2E", function()
       local result = editor_save(bufnr, token, "", { "review this function" })
       assert.equals("review this function", result)
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "review this"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "review this"))
       cleanup(bufnr)
     end)
   end)
@@ -386,7 +375,7 @@ describe("notes E2E", function()
       local result = editor_save(bufnr, token, "version 1", { "version 2" })
       assert.equals("version 2", result)
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "version 2"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "version 2"))
       cleanup(bufnr)
     end)
   end)
@@ -467,7 +456,7 @@ describe("notes E2E", function()
       auditor._close_note_float()
 
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "persistent"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "persistent"))
       cleanup(bufnr)
     end)
   end)
@@ -488,7 +477,7 @@ describe("notes E2E", function()
       -- Edit it
       local result = editor_save(bufnr, token, "before edit", { "after edit" })
       assert.equals("after edit", result)
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "after edit"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "after edit"))
       cleanup(bufnr)
     end)
   end)
@@ -522,7 +511,7 @@ describe("notes E2E", function()
       assert.equals(0, note_extmark_count(bufnr, hl.note_ns))
 
       auditor.enter_audit_mode()
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "persisted note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "persisted note"))
       assert.equals(1, note_count(auditor, bufnr))
       cleanup(bufnr)
     end)
@@ -544,7 +533,7 @@ describe("notes E2E", function()
       auditor.enter_audit_mode()
 
       -- Note should be recovered
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "stale recovery note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "stale recovery note"))
       assert.equals(1, note_count(auditor, bufnr))
       cleanup(bufnr)
     end)
@@ -561,7 +550,7 @@ describe("notes E2E", function()
       auditor.exit_audit_mode()
       auditor.enter_audit_mode()
 
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "unsaved note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "unsaved note"))
       assert.equals(1, note_count(auditor, bufnr))
       cleanup(bufnr)
     end)
@@ -583,7 +572,7 @@ describe("notes E2E", function()
         auditor.enter_audit_mode()
       end
 
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "durable note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "durable note"))
       assert.equals(1, note_count(auditor, bufnr))
       -- Only one note extmark, not duplicates
       assert.equals(1, note_extmark_count(bufnr, hl.note_ns))
@@ -606,7 +595,7 @@ describe("notes E2E", function()
       auditor.toggle_audit_mode()
       assert.is_true(auditor._audit_mode)
 
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "toggle note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "toggle note"))
       cleanup(bufnr)
     end)
   end)
@@ -690,8 +679,8 @@ describe("notes E2E", function()
       editor_save(bufnr, token2, "", { "second note" })
 
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "second note"))
-      assert.is_false(find_note_text(bufnr, hl.note_ns, "first note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "second note"))
+      assert.is_false(find_note_text_in_state(auditor, bufnr, "first note"))
       cleanup(bufnr)
     end)
   end)
@@ -722,9 +711,9 @@ describe("notes E2E", function()
       editor_save(bufnr, t3, "", { "note3" })
 
       assert.equals(3, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "note1"))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "note2"))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "note3"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "note1"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "note2"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "note3"))
       cleanup(bufnr)
     end)
   end)
@@ -754,9 +743,9 @@ describe("notes E2E", function()
       auditor.undo_at_cursor()
 
       assert.equals(2, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "line1 note"))
-      assert.is_false(find_note_text(bufnr, hl.note_ns, "line2 note"))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "line3 note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "line1 note"))
+      assert.is_false(find_note_text_in_state(auditor, bufnr, "line2 note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "line3 note"))
       cleanup(bufnr)
     end)
   end)
@@ -773,14 +762,14 @@ describe("notes E2E", function()
       editor_save(bufnr, token, "", { "gradient note" })
 
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "gradient note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "gradient note"))
 
       -- Save + round-trip
       auditor.audit()
       auditor.exit_audit_mode()
       auditor.enter_audit_mode()
 
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "gradient note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "gradient note"))
       cleanup(bufnr)
     end)
   end)
@@ -806,7 +795,7 @@ describe("notes E2E", function()
       editor_save(bufnr, token, "", { "green note" })
 
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "green note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "green note"))
       cleanup(bufnr)
     end)
   end)
@@ -829,7 +818,7 @@ describe("notes E2E", function()
       local token2 = auditor._cword_token(bufnr)
       editor_save(bufnr, token2, "", { "second" })
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "second"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "second"))
       cleanup(bufnr)
     end)
   end)
@@ -937,10 +926,10 @@ describe("notes E2E", function()
 
       assert.equals(1, note_count(auditor, bufA))
       assert.equals(1, note_count(auditor, bufB))
-      assert.is_true(find_note_text(bufA, hl.note_ns, "note A"))
-      assert.is_true(find_note_text(bufB, hl.note_ns, "note B"))
-      assert.is_false(find_note_text(bufA, hl.note_ns, "note B"))
-      assert.is_false(find_note_text(bufB, hl.note_ns, "note A"))
+      assert.is_true(find_note_text_in_state(auditor, bufA, "note A"))
+      assert.is_true(find_note_text_in_state(auditor, bufB, "note B"))
+      assert.is_false(find_note_text_in_state(auditor, bufA, "note B"))
+      assert.is_false(find_note_text_in_state(auditor, bufB, "note A"))
 
       cleanup(bufA)
       cleanup(bufB)
@@ -1066,7 +1055,7 @@ describe("notes E2E", function()
       auditor.exit_audit_mode()
       auditor.enter_audit_mode()
 
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "still here"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "still here"))
       cleanup(bufnr)
     end)
   end)
@@ -1087,7 +1076,7 @@ describe("notes E2E", function()
       auditor.exit_audit_mode()
       auditor.enter_audit_mode()
 
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "stays"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "stays"))
       cleanup(bufnr)
     end)
   end)
@@ -1177,7 +1166,7 @@ describe("notes E2E", function()
 
       -- Note should still be preserved in _saved_notes even though viewer was open
       auditor.enter_audit_mode()
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "viewer text"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "viewer text"))
       cleanup(bufnr)
     end)
   end)
@@ -1326,7 +1315,7 @@ describe("notes E2E", function()
 
       -- S8→S9: re-enter, note restored
       auditor.enter_audit_mode()
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "my note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "my note"))
       assert.equals(1, note_count(auditor, bufnr))
 
       cleanup(bufnr)
@@ -1463,7 +1452,7 @@ describe("notes E2E", function()
 
       -- S8→S9
       auditor.enter_audit_mode()
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "lifecycle note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "lifecycle note"))
       assert.equals(1, note_count(auditor, bufnr))
       assert.equals(1, note_extmark_count(bufnr, hl.note_ns))
 
@@ -1760,13 +1749,13 @@ describe("notes E2E", function()
       restore_input()
 
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "input note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "input note"))
 
       -- Round-trip
       auditor.audit()
       auditor.exit_audit_mode()
       auditor.enter_audit_mode()
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "input note"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "input note"))
 
       cleanup(bufnr)
     end)
@@ -1790,7 +1779,7 @@ describe("notes E2E", function()
 
       local target_id = find_target_id(bufnr, hl.ns, token)
       assert.equals("input edited", auditor._notes[bufnr][target_id])
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "input edited"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "input edited"))
 
       cleanup(bufnr)
     end)
@@ -1887,9 +1876,9 @@ describe("notes E2E", function()
       auditor.exit_audit_mode()
       auditor.enter_audit_mode()
 
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "re-created"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "re-created"))
       -- "updated" should not appear (it was deleted before re-create)
-      assert.is_false(find_note_text(bufnr, hl.note_ns, "updated"))
+      assert.is_false(find_note_text_in_state(auditor, bufnr, "updated"))
 
       local rows = db.get_highlights(filepath)
       local db_note = nil
@@ -1939,9 +1928,9 @@ describe("notes E2E", function()
       editor_save(bufnr, tB, "", { "note B" })
 
       assert.equals(2, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "note A v2"))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "note B"))
-      assert.is_false(find_note_text(bufnr, hl.note_ns, "note C"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "note A v2"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "note B"))
+      assert.is_false(find_note_text_in_state(auditor, bufnr, "note C"))
 
       -- Round-trip
       auditor.audit()
@@ -1949,8 +1938,8 @@ describe("notes E2E", function()
       auditor.enter_audit_mode()
 
       assert.equals(2, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "note A v2"))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "note B"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "note A v2"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "note B"))
 
       cleanup(bufnr)
     end)
@@ -1975,8 +1964,8 @@ describe("notes E2E", function()
       editor_save(bufnr, token2, "", { "fresh start" })
 
       assert.equals(1, note_count(auditor, bufnr))
-      assert.is_true(find_note_text(bufnr, hl.note_ns, "fresh start"))
-      assert.is_false(find_note_text(bufnr, hl.note_ns, "original"))
+      assert.is_true(find_note_text_in_state(auditor, bufnr, "fresh start"))
+      assert.is_false(find_note_text_in_state(auditor, bufnr, "original"))
 
       cleanup(bufnr)
     end)

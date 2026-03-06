@@ -12,7 +12,7 @@
 --   E7  multi-line save stores newlines
 --   E8  editor opens in insert mode for new note
 --   E9  editor opens in normal mode for edit (pre-filled)
---   E10 saving updates EOL preview
+--   E10 saving updates note underline extmark
 --   E11 rapid open/close cycles don't crash
 --   E12 editor closes previous float
 --   E13 editor on deleted buffer doesn't crash
@@ -322,9 +322,9 @@ describe("notes editor", function()
     end)
   end)
 
-  -- ── E10: saving updates EOL preview ──────────────────────────────────
-  describe("E10: save updates EOL preview", function()
-    it("note extmark preview updated after save", function()
+  -- ── E10: saving updates note underline extmark ──────────────────────
+  describe("E10: save updates note underline extmark", function()
+    it("note extmark with AuditorNote hl_group created after save", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local token = auditor._cword_token(bufnr)
@@ -342,16 +342,18 @@ describe("notes editor", function()
         end
       end
 
-      -- Check note extmark was updated
+      -- Check note extmark has AuditorNote hl_group (not virt_text)
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       local found = false
       for _, m in ipairs(marks) do
-        local vt = m[4].virt_text
-        if vt and vt[1][1]:match("updated preview") then
+        if m[4].hl_group == "AuditorNote" then
           found = true
         end
       end
       assert.is_true(found)
+
+      -- Verify note content via _notes table
+      assert.equals("updated preview", auditor._notes[bufnr][target_id])
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)

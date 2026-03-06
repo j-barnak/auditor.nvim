@@ -145,7 +145,7 @@ describe("notes", function()
 
   -- ── N3: add_note attaches note ──────────────────────────────────────────
   describe("N3: add_note attaches note", function()
-    it("creates virtual text on the line", function()
+    it("creates note extmark with AuditorNote highlight", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
 
@@ -157,16 +157,11 @@ describe("notes", function()
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#note_marks >= 1)
 
-      -- Check virtual text content
+      -- Check that note extmark has AuditorNote highlight
       local found_note = false
       for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("review this") then
-              found_note = true
-            end
-          end
+        if m[4].hl_group and m[4].hl_group:match("AuditorNote") then
+          found_note = true
         end
       end
       assert.is_true(found_note)
@@ -307,13 +302,10 @@ describe("notes", function()
       assert.is_true(#note_marks >= 1)
 
       local found = false
-      for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("reload me") then
-              found = true
-            end
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("reload me") then
+            found = true
           end
         end
       end
@@ -339,14 +331,12 @@ describe("notes", function()
 
       -- Note should be back
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
+      assert.is_true(#note_marks >= 1)
       local found = false
-      for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("survive me") then
-              found = true
-            end
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("survive me") then
+            found = true
           end
         end
       end
@@ -369,14 +359,12 @@ describe("notes", function()
       auditor.enter_audit_mode()
 
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
+      assert.is_true(#note_marks >= 1)
       local found = false
-      for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("saved note") then
-              found = true
-            end
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("saved note") then
+            found = true
           end
         end
       end
@@ -399,14 +387,12 @@ describe("notes", function()
       end
 
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
+      assert.is_true(#note_marks >= 1)
       local found = false
-      for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("durable") then
-              found = true
-            end
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("durable") then
+            found = true
           end
         end
       end
@@ -517,19 +503,17 @@ describe("notes", function()
       restore_input()
 
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      -- There should be virtual text with both notes
-      local texts = {}
-      for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            table.insert(texts, chunk[1])
-          end
+      assert.is_true(#note_marks >= 2)
+      -- Check that _notes contains both note texts
+      local found1, found2 = false, false
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("note1") then found1 = true end
+          if text:match("note2") then found2 = true end
         end
       end
-      local all_text = table.concat(texts, " ")
-      assert.is_truthy(all_text:match("note1"))
-      assert.is_truthy(all_text:match("note2"))
+      assert.is_true(found1)
+      assert.is_true(found2)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -594,14 +578,12 @@ describe("notes", function()
       auditor.enter_audit_mode()
 
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
+      assert.is_true(#note_marks >= 1)
       local found = false
-      for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("round trip") then
-              found = true
-            end
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("round trip") then
+            found = true
           end
         end
       end
@@ -631,14 +613,12 @@ describe("notes", function()
 
       -- Note should be recovered on the shifted line
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
+      assert.is_true(#note_marks >= 1)
       local found = false
-      for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("stale note") then
-              found = true
-            end
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("stale note") then
+            found = true
           end
         end
       end
@@ -761,14 +741,12 @@ describe("notes", function()
 
       -- Verify the note text changed
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
+      assert.is_true(#note_marks >= 1)
       local found = false
-      for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("updated") then
-              found = true
-            end
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("updated") then
+            found = true
           end
         end
       end

@@ -175,7 +175,7 @@ describe("notes display", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello world" })
 
-      hl.apply_note(bufnr, 0, "my note", "red", "hello")
+      hl.apply_note(bufnr, 0, 0, 5, "my note", "red", "hello")
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
@@ -193,7 +193,7 @@ describe("notes display", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello world" })
 
-      hl.apply_note(bufnr, 0, "note", "red", "hello")
+      hl.apply_note(bufnr, 0, 0, 5, "note", "red", "hello")
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.equals("AuditorNoteSignRed", marks[1][4].sign_hl_group)
@@ -202,18 +202,19 @@ describe("notes display", function()
     end)
   end)
 
-  -- ── D11: apply_note EOL preview contains word prefix ─────────────────
-  describe("D11: apply_note EOL preview has word prefix", function()
-    it("virt_text includes word: prefix", function()
+  -- ── D11: apply_note extmark spans word with hl_group ─────────────────
+  describe("D11: apply_note extmark spans word with hl_group", function()
+    it("extmark has AuditorNote hl_group spanning the word", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello world" })
 
-      hl.apply_note(bufnr, 0, "check this", "red", "hello")
+      hl.apply_note(bufnr, 0, 0, 5, "check this", "red", "hello")
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      local vt = marks[1][4].virt_text
-      assert.is_truthy(vt)
-      assert.is_truthy(vt[1][1]:match("hello: check this"))
+      assert.is_true(#marks >= 1)
+      assert.equals("AuditorNote", marks[1][4].hl_group)
+      assert.equals(0, marks[1][2]) -- col_start
+      assert.equals(5, marks[1][4].end_col) -- col_end
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -225,7 +226,7 @@ describe("notes display", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello" })
 
-      hl.apply_note(bufnr, 0, "note", "half", "hello")
+      hl.apply_note(bufnr, 0, 0, 5, "note", "half", "hello")
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.equals("AuditorNoteSignHalf", marks[1][4].sign_hl_group)
@@ -236,7 +237,7 @@ describe("notes display", function()
 
   -- ── D13: Multiple notes on same line ─────────────────────────────────
   describe("D13: multiple notes on same line", function()
-    it("each word shows its own preview", function()
+    it("each word has its own note extmark", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local ri = stub_input("note_hello")
@@ -250,16 +251,21 @@ describe("notes display", function()
       ri()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      local texts = {}
+      assert.is_true(#marks >= 2)
+      -- Both should have AuditorNote hl_group
+      local found_hello = false
+      local found_world = false
       for _, m in ipairs(marks) do
-        local vt = m[4].virt_text
-        if vt then
-          table.insert(texts, vt[1][1])
+        assert.equals("AuditorNote", m[4].hl_group)
+        if m[3] == 0 and m[4].end_col == 5 then
+          found_hello = true
+        end
+        if m[3] == 6 and m[4].end_col == 11 then
+          found_world = true
         end
       end
-      local all = table.concat(texts, "|")
-      assert.is_truthy(all:match("hello: note_hello"))
-      assert.is_truthy(all:match("world: note_world"))
+      assert.is_true(found_hello)
+      assert.is_true(found_world)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -291,19 +297,20 @@ describe("notes display", function()
     end)
   end)
 
-  -- ── D16: backward compat ─────────────────────────────────────────────
+  -- ── D16: apply_note without color/word_text ──────────────────────────
   describe("D16: apply_note without color/word_text", function()
-    it("works with just bufnr, line, text", function()
+    it("works with bufnr, line, col_start, col_end, text", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello" })
 
-      local id = hl.apply_note(bufnr, 0, "plain note")
+      local id = hl.apply_note(bufnr, 0, 0, 5, "plain note")
       assert.is_number(id)
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
-      local vt = marks[1][4].virt_text
-      assert.is_truthy(vt[1][1]:match("plain note"))
+      assert.equals("AuditorNote", marks[1][4].hl_group)
+      assert.equals(0, marks[1][2]) -- col_start
+      assert.equals(5, marks[1][4].end_col) -- col_end
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -553,7 +560,7 @@ describe("notes display", function()
 
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello" })
-      hl2.apply_note(bufnr, 0, "test", "red", "hello")
+      hl2.apply_note(bufnr, 0, 0, 5, "test", "red", "hello")
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl2.note_ns, 0, -1, { details = true })
       assert.equals("! ", marks[1][4].sign_text)
@@ -570,7 +577,7 @@ describe("notes display", function()
 
       local bufnr = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello" })
-      hl2.apply_note(bufnr, 0, "test", "red", "hello")
+      hl2.apply_note(bufnr, 0, 0, 5, "test", "red", "hello")
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl2.note_ns, 0, -1, { details = true })
       -- No sign_text when icon is ""
@@ -837,9 +844,9 @@ describe("notes display", function()
     end)
   end)
 
-  -- ── D36: note EOL preview updates after edit_note ──────────────────────
-  describe("D36: EOL preview updates after edit_note", function()
-    it("preview reflects edited text", function()
+  -- ── D36: note extmark persists after edit_note ──────────────────────────
+  describe("D36: note extmark persists after edit_note", function()
+    it("note extmark still present with hl_group after edit", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local ri = stub_input("original")
@@ -852,10 +859,10 @@ describe("notes display", function()
       ri()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
+      assert.is_true(#marks >= 1)
       local found = false
       for _, m in ipairs(marks) do
-        local vt = m[4].virt_text
-        if vt and vt[1][1]:match("updated text") then
+        if m[4].hl_group == "AuditorNote" then
           found = true
         end
       end
@@ -927,9 +934,9 @@ describe("notes display", function()
     end)
   end)
 
-  -- ── D40: note word prefix from DB restoration ──────────────────────────
+  -- ── D40: note extmark correct after DB restoration ─────────────────────
   describe("D40: word prefix correct after DB restoration", function()
-    it("EOL preview shows word: prefix after save/load", function()
+    it("note extmark spans correct word position after save/load", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local ri = stub_input("check this")
@@ -942,8 +949,9 @@ describe("notes display", function()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
-      local vt = marks[1][4].virt_text
-      assert.is_truthy(vt[1][1]:match("hello: check this"))
+      assert.equals("AuditorNote", marks[1][4].hl_group)
+      assert.equals(0, marks[1][2]) -- col_start for "hello"
+      assert.equals(5, marks[1][4].end_col) -- col_end for "hello"
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)

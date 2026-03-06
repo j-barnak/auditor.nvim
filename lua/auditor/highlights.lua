@@ -70,8 +70,8 @@ function M.setup(color_defs)
     grad_groups[k] = nil
   end
 
-  -- Note virtual text highlight (dimmed, italic).
-  vim.api.nvim_set_hl(0, "AuditorNote", { fg = "#888888", italic = true })
+  -- Note indicator highlight: subtle underline on the word.
+  vim.api.nvim_set_hl(0, "AuditorNote", { underline = true, sp = "#888888" })
 
   -- Note sign and float highlight groups.
   vim.api.nvim_set_hl(0, "AuditorNoteSign", { fg = "#888888" })
@@ -452,25 +452,28 @@ function M.note_sign_hl(color)
   return "AuditorNoteSign"
 end
 
--- Apply a note as sign + truncated EOL preview.
+-- Apply a note indicator as an underline on the highlighted word.
 -- Returns the note extmark ID in note_ns.
 ---@param bufnr integer
 ---@param line integer 0-indexed line number
----@param text string note text
+---@param col_start integer 0-indexed byte column start of the word
+---@param col_end integer 0-indexed byte column end of the word (exclusive)
+---@param _text string note text (unused for display, kept for API)
 ---@param color? string audit color for sign tinting
----@param word_text? string word the note is attached to
+---@param _word_text? string word the note is attached to (unused)
 ---@return integer note_extmark_id
-function M.apply_note(bufnr, line, text, color, word_text)
-  local preview = M.format_note_preview(text, word_text, M._note_preview_len)
+function M.apply_note(bufnr, line, col_start, col_end, _text, color, _word_text)
   local opts = {
-    virt_text = { { preview, "AuditorNote" } },
-    virt_text_pos = "eol",
+    end_row = line,
+    end_col = col_end,
+    hl_group = "AuditorNote",
+    priority = 200,
   }
   if M._note_sign_icon and M._note_sign_icon ~= "" then
     opts.sign_text = M._note_sign_icon
     opts.sign_hl_group = M.note_sign_hl(color)
   end
-  return vim.api.nvim_buf_set_extmark(bufnr, M.note_ns, line, 0, opts)
+  return vim.api.nvim_buf_set_extmark(bufnr, M.note_ns, line, col_start, opts)
 end
 
 -- Clear all note extmarks for a buffer.

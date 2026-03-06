@@ -63,12 +63,13 @@ test/
   spec/custom_colors_spec.lua     – Extensible color system: custom solid/gradient, picker, E2E, property, fuzz
   spec/notes_spec.lua             – Virtual text notes: add/edit/delete, persist, mode transitions, undo/clear, stale recovery
   spec/notes_fuzz_spec.lua        – Note text fuzz: random ASCII, Unicode, SQL injection, control chars, nasty strings gauntlet
-  spec/notes_display_spec.lua     – Note display: format_note_preview, sign indicators, EOL preview, floating viewer
+  spec/notes_display_spec.lua     – Note display: underline extmarks, sign indicators, floating viewer
   spec/notes_editor_spec.lua      – Floating note editor: create, pre-fill, save, cancel, multi-line, rapid cycles
   spec/notes_display_fuzz_spec.lua – Note display fuzz: format_note_preview fuzz, float lifecycle, nasty strings, property-based
   spec/notes_save_and_scale_spec.lua – Note save keymaps, configurable keys, many-notes scaling, DB round-trip, fuzz
   spec/stale_recovery_spec.lua    – Stale highlight recovery: line/col shifts, word boundaries, property-based, notes
   spec/notes_e2e_spec.lua         – Notes E2E: exhaustive state machine (S0–S9), float editor/viewer lifecycle, CRUD cycles, multi-buffer, toggle, undo/clear/re-mark, multi-line, DB round-trips, pick_note_action, buffer content invariants
+  spec/notes_underline_spec.lua   – Note underline indicator: hl_group, word-range spans, sign colors, same-line multi-note, positions, priority, lifecycle, rapid add/delete, stopinsert
 ```
 
 ## Audit mode
@@ -108,7 +109,7 @@ All marking/saving/clearing commands require audit mode to be active. This is th
 - **sqlite.lua API used**: `tbl:get({ where={...} })`, `tbl:insert({...})`, `tbl:remove({ key=val })`.
 - **Pending preservation**: pending survives enter/exit cycles but is lost on Neovim restart. Only `:AuditSave` makes highlights persistent.
 - **Configurable keymaps**: `setup({ keymaps = ... })` — `false` disables all, `true`/nil for defaults, table to override individual bindings. See README for full action table.
-- **Note display**: Notes are shown via sign column icon (configurable, default `◆`) tinted per-color + truncated EOL preview (`  word: first line... (+N lines)`). Full notes viewable in read-only floating window (`:AuditNoteShow`). Editing uses a floating scratch buffer. Save keys: `_note_save_keys` (default `{"<C-s>", "<S-CR>"}`), cancel keys: `_note_cancel_keys` (default `{"q", "<Esc>"}`). Both configurable via `setup({ note_save_keys = ..., note_cancel_keys = ... })`. Save keys bind in n+i modes, cancel keys in n only. `_note_input_override` flag makes `add_note`/`edit_note` fall back to `vim.ui.input` (for tests). `format_note_preview()` and `note_sign_hl()` are pure functions on `highlights` module.
-- **Note internals**: `_notes[bufnr][extmark_id] = text` during audit mode. On exit, saved to `_saved_notes[bufnr]["line:col_start:col_end"] = text` for position-keyed persistence across mode transitions. Notes are stored in DB `note` column and rendered in `note_ns` (separate namespace, never affects diffs). `_note_float_win`/`_note_float_buf` track the current floating window.
+- **Note display**: Notes are indicated by a subtle underline on the highlighted word (`AuditorNote` hl group: `underline = true, sp = "#888888"`, priority 200) + sign column icon (configurable, default `◆`) tinted per-color. Full notes viewable in read-only floating window (`:AuditNoteShow`). Editing uses a floating scratch buffer. Save keys: `_note_save_keys` (default `{"<C-s>", "<S-CR>"}`), cancel keys: `_note_cancel_keys` (default `{"q", "<Esc>"}`). Both configurable via `setup({ note_save_keys = ..., note_cancel_keys = ... })`. Save keys bind in n+i modes, cancel keys in n only. `_note_input_override` flag makes `add_note`/`edit_note` fall back to `vim.ui.input` (for tests). `note_sign_hl()` is a pure function on `highlights` module.
+- **Note internals**: `_notes[bufnr][extmark_id] = text` during audit mode. On exit, saved to `_saved_notes[bufnr]["line:col_start:col_end"] = text` for position-keyed persistence across mode transitions. Notes are stored in DB `note` column. Note underlines are rendered as word-range extmarks in `note_ns` (separate namespace, never affects diffs). `apply_note(bufnr, line, col_start, col_end, text, color, word_text)` creates the underline extmark. `_note_float_win`/`_note_float_buf` track the current floating window.
 - **Stale highlight recovery**: `word_text` stored in DB alongside positions. On `load_for_buffer`, if text at stored position doesn't match, `recover_highlight()` searches ±50 lines for a whole-word match and picks closest. Notification shown when highlights are recovered.
 - **Color picker**: `M._colors` (picker entries) are built from color defs during `setup()`. Each entry has `{ label, color }` where `color` is the internal name. `pick_color()` and `pick_cword_color()` use `vim.ui.select` on this list.

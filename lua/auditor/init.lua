@@ -217,9 +217,7 @@ function M.load_for_buffer(bufnr)
       -- Restore note if present.
       if row.note and row.note ~= "" then
         M._notes[bufnr][id] = row.note
-        local lt = vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1]
-        local wt = lt and lt:sub(col_start + 1, col_end)
-        highlights.apply_note(bufnr, line, row.note, row.color, wt)
+        highlights.apply_note(bufnr, line, col_start, col_end, row.note, row.color)
       end
     end
     ::continue::
@@ -361,6 +359,7 @@ M._sync_pending_from_extmarks = sync_pending_from_extmarks
 local function remove_extmarks_at(bufnr, line, col_start, col_end)
   local marks =
     vim.api.nvim_buf_get_extmarks(bufnr, highlights.ns, { line, col_start }, { line, col_end }, { details = true })
+  local had_note = false
   for _, mark in ipairs(marks) do
     local id, row, col, details = mark[1], mark[2], mark[3], mark[4]
     if row == line and col == col_start and details.end_col == col_end then
@@ -370,8 +369,9 @@ local function remove_extmarks_at(bufnr, line, col_start, col_end)
       if M._db_extmarks[bufnr] then
         M._db_extmarks[bufnr][id] = nil
       end
-      if M._notes[bufnr] then
+      if M._notes[bufnr] and M._notes[bufnr][id] then
         M._notes[bufnr][id] = nil
+        had_note = true
       end
       if M._pending[bufnr] then
         for _, entry in ipairs(M._pending[bufnr]) do
@@ -386,6 +386,10 @@ local function remove_extmarks_at(bufnr, line, col_start, col_end)
         end
       end
     end
+  end
+  -- Refresh note extmarks on this line to clean up orphaned underlines.
+  if had_note then
+    M._refresh_notes_for_line(bufnr, line)
   end
 end
 
@@ -702,8 +706,8 @@ function M.enter_audit_mode()
             local key = string.format("%d:%d:%d", row, col, end_col)
             if M._saved_notes[bufnr][key] then
               M._notes[bufnr][id] = M._saved_notes[bufnr][key]
-              local color, word_text = extmark_color_and_word(bufnr, em)
-              highlights.apply_note(bufnr, row, M._saved_notes[bufnr][key], color, word_text)
+              local color = extmark_color_and_word(bufnr, em)
+              highlights.apply_note(bufnr, row, col, end_col, M._saved_notes[bufnr][key], color)
             end
           end
         end
@@ -894,10 +898,13 @@ function M._refresh_notes_for_line(bufnr, line)
   end
   local ext = vim.api.nvim_buf_get_extmarks(bufnr, highlights.ns, { line, 0 }, { line, -1 }, { details = true })
   for _, em in ipairs(ext) do
-    local id = em[1]
+    local id, _, col, details = em[1], em[2], em[3], em[4]
     if M._notes[bufnr][id] then
-      local color, word_text = extmark_color_and_word(bufnr, em)
-      highlights.apply_note(bufnr, line, M._notes[bufnr][id], color, word_text)
+      local end_col = details and details.end_col
+      if end_col then
+        local color = extmark_color_and_word(bufnr, em)
+        highlights.apply_note(bufnr, line, col, end_col, M._notes[bufnr][id], color)
+      end
     end
   end
 end
@@ -1315,6 +1322,8 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
     if not vim.api.nvim_buf_is_valid(float_buf) then
       return
     end
+    -- Leave insert mode first to prevent double-press issues
+    vim.cmd("stopinsert")
     local note_lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
     local text = table.concat(note_lines, "\n")
     text = text:gsub("%s+$", "")

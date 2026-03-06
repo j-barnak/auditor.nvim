@@ -281,17 +281,9 @@ describe("notes display fuzz", function()
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.equals(3, #marks)
 
-      local all_text = {}
       for _, m in ipairs(marks) do
-        local vt = m[4].virt_text
-        if vt then
-          table.insert(all_text, vt[1][1])
-        end
+        assert.equals("AuditorNote", m[4].hl_group)
       end
-      local joined = table.concat(all_text, "|")
-      assert.is_truthy(joined:match("n_aaa"))
-      assert.is_truthy(joined:match("n_bbb"))
-      assert.is_truthy(joined:match("n_ccc"))
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -335,7 +327,7 @@ describe("notes display fuzz", function()
         local bufnr = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello world" })
 
-        local ok, err = pcall(hl.apply_note, bufnr, 0, text, color, word)
+        local ok, err = pcall(hl.apply_note, bufnr, 0, 0, 5, text, color, word)
         assert(ok, string.format("seed=%d: %s", seed, tostring(err)))
 
         pcall(vim.api.nvim_buf_delete, bufnr, { force = true })

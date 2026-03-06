@@ -666,20 +666,26 @@ describe("stale recovery", function()
 
       auditor.enter_audit_mode()
 
-      -- Check note virtual text exists on the new line
+      -- Check note extmark exists on the new line with AuditorNote hl_group
       local note_marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      local found = false
+      local found_hl = false
       for _, m in ipairs(note_marks) do
-        local vt = m[4].virt_text
-        if vt then
-          for _, chunk in ipairs(vt) do
-            if chunk[1]:match("recover me") then
-              found = true
-            end
+        if m[4].hl_group == "AuditorNote" then
+          found_hl = true
+        end
+      end
+      assert.is_true(found_hl)
+
+      -- Verify note content via internal state
+      local found_note = false
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          if text:match("recover me") then
+            found_note = true
           end
         end
       end
-      assert.is_true(found)
+      assert.is_true(found_note)
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)

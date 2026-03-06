@@ -10,16 +10,16 @@
 --   S6  save closes the float window
 --   S7  S-CR save DB round-trip
 --   S8  all save keymaps are equivalent (S-CR, C-s)
---   S9  save updates EOL preview
+--   S9  save creates note underline extmark
 --   S10 save multi-line content
 --   S11 10 notes on separate lines with long text
---   S12 20 notes: all signs and previews present
+--   S12 20 notes: all signs and note extmarks present
 --   S13 many notes: save/exit/enter round-trip preserves all
 --   S14 50 words on 50 lines: mark + note + save + reload
---   S15 long note (1000 chars): preview truncated, viewer shows full
---   S16 very long note (10K chars): no crash, preview bounded
---   S17 multi-line note (50 lines): preview shows (+N lines), viewer has all
---   S18 note with 200-char word prefix: preview bounded
+--   S15 long note (1000 chars): underline extmark, viewer shows full
+--   S16 very long note (10K chars): no crash, underline extmark present
+--   S17 multi-line note (50 lines): underline extmark, viewer has all
+--   S18 note with 200-char word prefix: underline extmark present
 --   S19 fuzz: 100 random notes, mark + save + exit + enter, all restored
 --   S20 fuzz: random note lengths (1-5000 chars), 50 iterations
 --   S21 fuzz: rapid mark + note + undo cycles (100 iterations)
@@ -345,9 +345,9 @@ describe("notes save and scale", function()
     end)
   end)
 
-  -- ── S9: save updates EOL preview ───────────────────────────────────────
-  describe("S9: save updates EOL preview", function()
-    it("EOL preview reflects saved text", function()
+  -- ── S9: save creates note underline extmark ─────────────────────────────
+  describe("S9: save creates note underline extmark", function()
+    it("note extmark has AuditorNote hl_group and text is in _notes", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       auditor.highlight_cword_buffer("red")
       local token = auditor._cword_token(bufnr)
@@ -358,14 +358,16 @@ describe("notes save and scale", function()
       get_keymap_cb(auditor._note_float_buf, "n", "<S-CR>")()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      local found = false
+      local found_extmark = false
       for _, m in ipairs(marks) do
-        local vt = m[4].virt_text
-        if vt and vt[1][1]:match("preview check") then
-          found = true
+        if m[4].hl_group == "AuditorNote" then
+          found_extmark = true
         end
       end
-      assert.is_true(found)
+      assert.is_true(found_extmark, "note extmark with AuditorNote hl_group should exist")
+
+      -- Verify note text via _notes
+      assert.equals("preview check", auditor._notes[bufnr][target_id])
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
@@ -517,13 +519,11 @@ describe("notes save and scale", function()
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.equals(10, #marks)
 
-      for _, m in ipairs(marks) do
-        -- Each should have sign and preview
+      for idx, m in ipairs(marks) do
+        -- Each should have sign and AuditorNote underline
         assert.is_truthy(m[4].sign_text)
-        assert.is_truthy(m[4].virt_text)
-        -- Preview should be truncated (not the full 100+ chars)
-        local preview = m[4].virt_text[1][1]
-        assert.is_true(#preview <= 40) -- "  " + max 30 content + some margin
+        assert.equals("AuditorNote", m[4].hl_group,
+          "note extmark " .. idx .. " should have AuditorNote hl_group")
       end
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
@@ -550,18 +550,22 @@ describe("notes save and scale", function()
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.equals(20, #marks)
 
-      -- Collect all preview texts
-      local previews = {}
+      -- Verify all note extmarks have AuditorNote hl_group
       for _, m in ipairs(marks) do
-        local vt = m[4].virt_text
-        if vt then
-          table.insert(previews, vt[1][1])
+        assert.equals("AuditorNote", m[4].hl_group,
+          "note extmark should have AuditorNote hl_group")
+      end
+
+      -- Verify all note texts present via _notes
+      local all_texts = {}
+      if auditor._notes[bufnr] then
+        for _, text in pairs(auditor._notes[bufnr]) do
+          all_texts[text] = true
         end
       end
-      local all = table.concat(previews, "|")
       for i = 1, 20 do
-        assert.is_truthy(all:find("note" .. i, 1, true),
-          "missing preview for note" .. i)
+        assert.is_truthy(all_texts["note" .. i],
+          "missing note text for note" .. i)
       end
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
@@ -640,9 +644,9 @@ describe("notes save and scale", function()
     end)
   end)
 
-  -- ── S15: long note (1000 chars): preview truncated, viewer full ────────
+  -- ── S15: long note (1000 chars): underline extmark, viewer full ────────
   describe("S15: long note 1000 chars", function()
-    it("preview truncated but viewer shows full content", function()
+    it("note extmark has AuditorNote hl_group, viewer shows full content", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       local long_text = string.rep("abcde ", 167) -- ~1000 chars
       auditor.highlight_cword_buffer("red")
@@ -650,10 +654,10 @@ describe("notes save and scale", function()
       auditor.add_note()
       ri()
 
-      -- Preview should be truncated
+      -- Note extmark should have AuditorNote hl_group (no virt_text)
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      local preview = marks[1][4].virt_text[1][1]
-      assert.is_true(#preview < 100) -- way shorter than 1000
+      assert.is_true(#marks >= 1)
+      assert.equals("AuditorNote", marks[1][4].hl_group)
 
       -- Viewer should show full text
       auditor.show_note()
@@ -679,8 +683,7 @@ describe("notes save and scale", function()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
       assert.is_true(#marks >= 1)
-      local preview = marks[1][4].virt_text[1][1]
-      assert.is_true(#preview <= 40)
+      assert.equals("AuditorNote", marks[1][4].hl_group)
 
       -- Save and reload
       auditor.audit()
@@ -702,9 +705,9 @@ describe("notes save and scale", function()
     end)
   end)
 
-  -- ── S17: multi-line note (50 lines): preview and viewer ────────────────
+  -- ── S17: multi-line note (50 lines): underline extmark and viewer ──────
   describe("S17: multi-line note 50 lines", function()
-    it("preview shows +N lines, viewer has all lines", function()
+    it("note extmark has AuditorNote hl_group, viewer has all lines", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       local note_lines = {}
       for i = 1, 50 do
@@ -716,10 +719,22 @@ describe("notes save and scale", function()
       auditor.add_note()
       ri()
 
-      -- Preview should mention +49 lines
+      -- Note extmark should have AuditorNote hl_group
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      local preview = marks[1][4].virt_text[1][1]
-      assert.is_truthy(preview:match("%+49 lines%)"))
+      assert.is_true(#marks >= 1)
+      assert.equals("AuditorNote", marks[1][4].hl_group)
+
+      -- Full note text should be in _notes
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+      local note_text = auditor._notes[bufnr][target_id]
+      assert.is_truthy(note_text)
+      -- Should contain all 50 lines
+      local line_count = 1
+      for _ in note_text:gmatch("\n") do
+        line_count = line_count + 1
+      end
+      assert.equals(50, line_count)
 
       -- Viewer should have all 50 lines
       auditor.show_note()
@@ -735,7 +750,7 @@ describe("notes save and scale", function()
 
   -- ── S18: note with very long word prefix ───────────────────────────────
   describe("S18: long word prefix", function()
-    it("preview bounded even with 200-char word", function()
+    it("note extmark exists with AuditorNote hl_group for 200-char word", function()
       local long_word = string.rep("a", 200)
       local bufnr = setup_buf({ long_word .. " rest" }, 1, 0)
       auditor.highlight_cword_buffer("red")
@@ -744,9 +759,13 @@ describe("notes save and scale", function()
       ri()
 
       local marks = vim.api.nvim_buf_get_extmarks(bufnr, hl.note_ns, 0, -1, { details = true })
-      local preview = marks[1][4].virt_text[1][1]
-      -- Preview should be bounded
-      assert.is_true(#preview <= 40)
+      assert.is_true(#marks >= 1)
+      assert.equals("AuditorNote", marks[1][4].hl_group)
+
+      -- Note text should be stored correctly
+      local token = auditor._cword_token(bufnr)
+      local target_id = find_target_id(bufnr, token)
+      assert.equals("note text", auditor._notes[bufnr][target_id])
 
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
