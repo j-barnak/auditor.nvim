@@ -1318,17 +1318,23 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
   M._note_float_win = win
   M._note_float_buf = float_buf
 
+  local saving = false
   local function save_note()
+    if saving then
+      return
+    end
     if not vim.api.nvim_buf_is_valid(float_buf) then
       return
     end
-    -- Leave insert mode first to prevent double-press issues
-    vim.cmd("stopinsert")
+    saving = true
     local note_lines = vim.api.nvim_buf_get_lines(float_buf, 0, -1, false)
     local text = table.concat(note_lines, "\n")
     text = text:gsub("%s+$", "")
 
     vim.bo[float_buf].modified = false
+    -- Escape insert mode via feedkeys so mode change completes before close
+    local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+    vim.api.nvim_feedkeys(esc, "nx", false)
     if vim.api.nvim_win_is_valid(win) then
       vim.api.nvim_win_close(win, true)
     end
