@@ -68,8 +68,13 @@ function M.setup(db_path)
     end)
   end
 
+  -- Use lazy=true so sqlite.lua does NOT run check_for_auto_alter during
+  -- construction.  That check errors on column-count changes (e.g. when a
+  -- DB from an older schema version is opened).  We handle migration ourselves
+  -- via ALTER TABLE before any tbl method is called.
   db_obj = sqlite({
     uri = db_path,
+    opts = { lazy = true },
     highlights = {
       id = true, -- auto integer primary key
       filepath = { "text", required = true },
@@ -84,18 +89,39 @@ function M.setup(db_path)
   })
   _G._auditor_db_obj = db_obj
 
-  -- Migrate existing databases: add new columns if they don't exist.
-  -- ALTER TABLE ADD COLUMN errors on duplicate; pcall swallows it.
   local inner = db_obj.db
   if inner.closed then
     inner:open()
   end
-  pcall(function()
-    inner:eval("ALTER TABLE highlights ADD COLUMN word_text TEXT NOT NULL DEFAULT ''")
-  end)
-  pcall(function()
-    inner:eval("ALTER TABLE highlights ADD COLUMN note TEXT NOT NULL DEFAULT ''")
-  end)
+
+  -- Check if the table already exists from a previous session.
+  local table_exists = inner:exists("highlights")
+
+  if table_exists then
+    -- Migrate existing databases: add new columns if they don't exist.
+    -- ALTER TABLE ADD COLUMN errors on duplicate; pcall swallows it.
+    pcall(function()
+      inner:eval("ALTER TABLE highlights ADD COLUMN word_index INTEGER DEFAULT 1")
+    end)
+    pcall(function()
+      inner:eval("ALTER TABLE highlights ADD COLUMN word_text TEXT DEFAULT ''")
+    end)
+    pcall(function()
+      inner:eval("ALTER TABLE highlights ADD COLUMN note TEXT DEFAULT ''")
+    end)
+
+    -- Inform sqlite.lua that the table already exists and provide the current
+    -- DB schema.  This prevents check_for_auto_alter from running on the first
+    -- tbl method call — we've already handled migration via ALTER TABLE above.
+    local tbl = db_obj.highlights
+    tbl.tbl_exists = true
+    tbl.db_schema = inner:schema("highlights")
+  else
+    -- Table does not exist yet (fresh DB).  Trigger sqlite.lua's lazy init
+    -- to create it from the schema above, so raw-SQL callers like
+    -- rewrite_highlights() find the table immediately.
+    db_obj.highlights:get({ where = { filepath = "" } })
+  end
 end
 
 -- Return all saved highlights for a file.

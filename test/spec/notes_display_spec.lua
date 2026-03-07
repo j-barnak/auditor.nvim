@@ -817,7 +817,7 @@ describe("notes display", function()
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end)
 
-    it("height capped at 15 for many lines", function()
+    it("height capped by float opts for many lines", function()
       local bufnr = setup_buf({ "hello world" }, 1, 0)
       local lines = {}
       for i = 1, 30 do
@@ -830,7 +830,10 @@ describe("notes display", function()
 
       auditor.show_note()
       local config = vim.api.nvim_win_get_config(auditor._note_float_win)
-      assert.equals(15, config.height)
+      -- Height must be less than the 30 content lines (capped by float opts)
+      assert.is_true(config.height < 30)
+      -- And it must be at least 1
+      assert.is_true(config.height >= 1)
 
       auditor._close_note_float()
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })

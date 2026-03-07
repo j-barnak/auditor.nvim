@@ -25,10 +25,18 @@
 ---@field label string  Display text in the picker menu
 ---@field color string  Internal color key
 
+---@class AuditorFloatOpts
+---@field padding? integer                      Padding from editor edges (default: 3)
+---@field max_width? number                     Max width: 0–1 = fraction of editor, >1 = columns (default: 0.9)
+---@field max_height? number                    Max height: 0–1 = fraction of editor, >1 = rows (default: 0.9)
+---@field border? string|string[]               Border style (default: "rounded")
+---@field win_options? table<string, any>        Window-local options (default: { winblend = 0 })
+
 ---@class AuditorSetupOpts
 ---@field db_path? string                       Override SQLite file path (default: auto per-project)
 ---@field keymaps? boolean|AuditorKeymaps       false to disable, true/nil for defaults, table to override
 ---@field colors? AuditorColorDef[]             Color definitions (solid or gradient); see highlights.DEFAULT_COLORS
+---@field float? AuditorFloatOpts               Floating window layout for note editor/viewer
 ---@field note_preview_len? integer             Max chars for EOL note preview (default: 30)
 ---@field note_sign_icon? string                Sign column icon for notes (default: "◆", "" to disable)
 ---@field note_sign_color? string               Hex color for the note sign icon (default: "#6B7280")
@@ -76,6 +84,53 @@ M._note_save_keys = { "<C-s>", "<S-CR>" }
 
 ---@type string[] Keys that cancel the note editor (configurable via setup).
 M._note_cancel_keys = { "q", "<Esc>" }
+
+---@type AuditorFloatOpts Resolved float options (configurable via setup).
+M._float_opts = {
+  padding = 3,
+  max_width = 0.9,
+  max_height = 0.9,
+  border = "rounded",
+  win_options = { winblend = 0 },
+}
+
+-- Compute a centered floating-window config from desired content dimensions.
+---@param content_width integer desired content width in columns
+---@param content_height integer desired content height in rows
+---@param title? string optional window title
+---@return table win_config for nvim_open_win()
+function M._compute_float_config(content_width, content_height, title)
+  local fo = M._float_opts
+  local columns = vim.o.columns
+  local lines = vim.o.lines - vim.o.cmdheight
+
+  local max_w = fo.max_width <= 1 and math.floor(columns * fo.max_width) or math.floor(fo.max_width)
+  local max_h = fo.max_height <= 1 and math.floor(lines * fo.max_height) or math.floor(fo.max_height)
+
+  max_w = math.min(max_w, columns - fo.padding * 2)
+  max_h = math.min(max_h, lines - fo.padding * 2)
+
+  local width = math.max(1, math.min(content_width, max_w))
+  local height = math.max(1, math.min(content_height, max_h))
+
+  local row = math.floor((lines - height) / 2)
+  local col = math.floor((columns - width) / 2)
+
+  local cfg = {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = width,
+    height = height,
+    border = fo.border,
+    style = "minimal",
+  }
+  if title then
+    cfg.title = title
+    cfg.title_pos = "center"
+  end
+  return cfg
+end
 
 -- Canonicalize a buffer filepath to prevent duplicate DB entries from symlinks
 -- or relative paths.
@@ -1228,25 +1283,19 @@ function M.show_note()
   for _, l in ipairs(lines) do
     max_line_len = math.max(max_line_len, #l)
   end
-  local width = math.max(20, math.min(80, max_line_len + 2))
-  local height = math.min(math.max(1, #lines), 15)
+  local content_w = math.max(20, max_line_len + 2)
+  local content_h = math.max(1, #lines)
 
-  local win = vim.api.nvim_open_win(float_buf, true, {
-    relative = "cursor",
-    row = 1,
-    col = 0,
-    width = width,
-    height = height,
-    style = "minimal",
-    border = "rounded",
-    title = " " .. word_text .. " ",
-    title_pos = "center",
-  })
+  local win_cfg = M._compute_float_config(content_w, content_h, " " .. word_text .. " ")
+  local win = vim.api.nvim_open_win(float_buf, true, win_cfg)
   vim.api.nvim_set_option_value(
     "winhl",
     "Normal:AuditorNoteFloat,FloatBorder:AuditorNoteFloatBorder,FloatTitle:AuditorNoteFloatTitle",
     { win = win }
   )
+  for opt, val in pairs(M._float_opts.win_options or {}) do
+    vim.api.nvim_set_option_value(opt, val, { win = win })
+  end
 
   M._note_float_win = win
   M._note_float_buf = float_buf
@@ -1294,27 +1343,22 @@ function M._open_note_editor(bufnr, target_id, token, initial_text)
   for _, l in ipairs(lines) do
     max_line_len = math.max(max_line_len, #l)
   end
-  local width = math.max(40, math.min(80, max_line_len + 4))
-  local height = math.max(3, math.min(15, #lines + 1))
+  local content_w = math.max(40, max_line_len + 4)
+  local content_h = math.max(3, #lines + 1)
 
   local lt = vim.api.nvim_buf_get_lines(bufnr, token.line, token.line + 1, false)[1]
   local word_text = lt and lt:sub(token.col_start + 1, token.col_end) or ""
 
-  local win = vim.api.nvim_open_win(float_buf, true, {
-    relative = "cursor",
-    row = 1,
-    col = 0,
-    width = width,
-    height = height,
-    border = "rounded",
-    title = " Note: " .. word_text .. " ",
-    title_pos = "center",
-  })
+  local win_cfg = M._compute_float_config(content_w, content_h, " Note: " .. word_text .. " ")
+  local win = vim.api.nvim_open_win(float_buf, true, win_cfg)
   vim.api.nvim_set_option_value(
     "winhl",
     "Normal:AuditorNoteFloat,FloatBorder:AuditorNoteFloatBorder,FloatTitle:AuditorNoteFloatTitle",
     { win = win }
   )
+  for opt, val in pairs(M._float_opts.win_options or {}) do
+    vim.api.nvim_set_option_value(opt, val, { win = win })
+  end
 
   M._note_float_win = win
   M._note_float_buf = float_buf
@@ -1422,6 +1466,11 @@ function M.setup(opts)
 
   db.setup(opts.db_path)
   highlights.setup(color_defs)
+
+  -- Apply float layout options.
+  if opts.float then
+    M._float_opts = vim.tbl_deep_extend("force", M._float_opts, opts.float)
+  end
 
   -- Apply note editor key bindings.
   if opts.note_save_keys then
